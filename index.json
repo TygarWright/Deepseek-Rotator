@@ -1,4 +1,4 @@
-// index.js — OpenRouter Key Rotation Proxy
+// index.json — OpenRouter Key Rotation Proxy
 import express from "express";
 import fetch from "node-fetch";
 import cors from "cors";
