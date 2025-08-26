@@ -1,16 +1,14 @@
 {
   "name": "openrouter-rotator-dashboard",
-  "version": "3.0.0",
-  "description": "OpenRouter proxy with key rotation + secure admin dashboard (no build, single file).",
+  "version": "3.1.0",
+  "description": "OpenRouter proxy with key rotation + glassmorphism dashboard.",
   "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.19.2",
-    "node-fetch": "^3.3.2"
+    "dotenv": "^16.4.5"
   },
   "engines": {
     "node": ">=18"
