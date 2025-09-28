@@ -273,7 +273,7 @@ app.get("/dashboard", requireAuth, (req,res)=>{
         <span class="pill \${it.status>=200&&it.status<400?'green':it.status===429?'yellow':'red'}">#\${it.keyIndex||'-'} • \${it.status}</span>
         <span class="pill">\${it.latencyMs} ms</span>
         <div class="mask"><b>[USER]</b> \${it.user||''}</div>
-        \${it.reply?`<div class="mask"><b>[BOT]</b> \${it.reply}</div>`:''}
+        ${it.reply?'<div class="mask"><b>[BOT]</b> ' + it.reply + '</div>':''}
       </div>\`).join('');
   };
   </script>
