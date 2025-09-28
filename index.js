@@ -173,42 +173,112 @@ app.post("/chat/completions", async(req,res)=>{
   }catch(e){ console.error("💥 Proxy error:",e); res.status(500).json({error:"Proxy error", detail:String(e)});}
 });
 
-// ===== Liquid Glass Dashboard =====
+// ===== Liquid Glass Dashboard Styles =====
 const baseStyles=`<style>
 body{margin:0;font-family:-apple-system,system-ui,sans-serif;background:linear-gradient(160deg,#0d1117,#111827);color:#e5e7eb;}
 a{color:#60a5fa;}
-.wrap{max-width:1100px;margin:0 auto;padding:24px;}
-.card{background:rgba(255,255,255,0.08);backdrop-filter:blur(18px);border-radius:24px;padding:20px;margin-bottom:20px;box-shadow:0 10px 30px rgba(0,0,0,0.25);transition:transform 0.2s;}
-.card:hover{transform:scale(1.02);}
-.title{font-size:26px;font-weight:700;background:linear-gradient(90deg,#a78bfa,#f472b6,#60a5fa);-webkit-background-clip:text;color:transparent;}
+.wrap{max-width:1400px;margin:0 auto;padding:24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:20px;}
+.card{background:rgba(255,255,255,0.08);backdrop-filter:blur(24px);border-radius:24px;padding:20px;box-shadow:0 12px 35px rgba(0,0,0,0.25);transition:transform 0.2s;}
+.card:hover{transform:scale(1.03);}
+.title{font-size:28px;font-weight:700;background:linear-gradient(90deg,#a78bfa,#f472b6,#60a5fa);-webkit-background-clip:text;color:transparent;margin-bottom:12px;}
 .btn{background:linear-gradient(90deg,#6366f1,#06b6d4);color:white;border:0;padding:10px 16px;border-radius:16px;cursor:pointer;transition:transform .1s ease;}
 .btn:hover{transform:scale(1.03);}
 .danger{background:linear-gradient(90deg,#ef4444,#f59e0b);}
 .muted{color:#9ca3af;font-size:12px;}
 .mask{font-family:ui-monospace,Menlo,Consolas,monospace;}
-.stat{font-size:28px;font-weight:800;}
-.log{background:rgba(0,0,0,0.35);border-radius:20px;padding:16px;height:360px;overflow:auto;border:1px solid rgba(255,255,255,0.08);}
-.row{margin-bottom:10px;}
+.stat{font-size:36px;font-weight:800;text-align:center;}
+.log-panel{background:rgba(0,0,0,0.35);border-radius:20px;padding:16px;height:400px;overflow:auto;border:1px solid rgba(255,255,255,0.08);}
+.log-row{margin-bottom:8px;padding:8px;border-radius:16px;transition:background 0.3s;}
+.row span{margin-right:6px;}
 .pill{display:inline-block;background:rgba(255,255,255,0.12);padding:2px 8px;border-radius:999px;font-size:12px;}
 .green{color:#34d399;}.yellow{color:#fbbf24;}.red{color:#f87171;}
 .top{display:flex;justify-content:space-between;align-items:center;gap:12px;}
 </style>`;
 
+// ===== Utilities =====
 function escapeHtml(s){return(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
-function renderLogs(items){if(!items.length)return'<div class="muted">No logs yet.</div>';return items.map(it=>`<div class="row"><span class="muted">${new Date(it.ts).toLocaleTimeString()}</span><span class="pill ${it.status>=200&&it.status<400?'green':it.status===429?'yellow':'red'}">#${it.keyIndex||'-'} • ${it.status}</span><span class="pill">${it.latencyMs} ms</span><div class="mask"><b>[USER]</b> ${escapeHtml(it.user||'')}</div>${it.reply?`<div class="mask"><b>[BOT]</b> ${escapeHtml(it.reply)}</div>`:''}</div>`).join('');}
 
 // ===== Dashboard Routes =====
 app.get("/login",(req,res)=>{
   res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1" />${baseStyles}<title>Login</title></head><body><div class="wrap"><div class="card" style="max-width:420px;margin:10vh auto;"><div class="title">Secure Login</div><form method="POST" action="/login"><input name="username" placeholder="Username" style="width:100%;padding:12px;border-radius:12px;margin-top:10px;background:#0b1220;color:#e5e7eb;border:1px solid #1f2937;"><input name="password" type="password" placeholder="Password" style="width:100%;padding:12px;border-radius:12px;margin-top:10px;background:#0b1220;color:#e5e7eb;border:1px solid #1f2937;"><div style="margin-top:14px;"><button class="btn" type="submit">Login</button></div></form></div></div></body></html>`);
 });
+
 app.post("/login",(req,res)=>{
   const {username,password}=req.body||{};
   if(username===DASH_USER&&password===DASH_PASS){setCookie(res,COOKIE_NAME,sign("ok"),COOKIE_TTL_MS);res.redirect("/dashboard");}
   else res.send(`<p style="padding:24px;">❌ Wrong username or password. <a href="/login">Try again</a></p>`);
 });
+
 app.get("/logout",(req,res)=>{clearCookie(res,COOKIE_NAME);res.redirect("/login");});
 app.get("/",(req,res)=>{res.redirect((req.headers.cookie||"").includes(COOKIE_NAME+"=")?"/dashboard":"/login");});
 
-app.get("/dashboard",requireAuth,(req,res)=>{
-  const upMin=Math.floor(process.uptime()*1000/60000);
-  const activeIdx=
+// ===== SSE for live stats/logs =====
+app.get("/stream", requireAuth, (req,res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  const sendData = () => {
+    const upMin = Math.floor(process.uptime() * 1000 / 60000);
+    const activeIdx = current;
+    const data = JSON.stringify({
+      uptime: upMin,
+      activeKey: activeIdx + 1,
+      rotations,
+      deadKeys: deadKeys.size,
+      rateLimited: rateLimitedKeys.size,
+      logs: logs.slice(-20)
+    });
+    res.write(`data: ${data}\n\n`);
+  };
+
+  const interval = setInterval(sendData, 1000);
+
+  req.on("close", () => clearInterval(interval));
+});
+
+// ===== Dashboard =====
+app.get("/dashboard", requireAuth, (req,res)=>{
+  res.send(`<html><head><meta name="viewport" content="width=device-width, initial-scale=1">${baseStyles}<title>LiquidGlass Dashboard</title></head><body>
+  <div class="wrap">
+    <div class="card stat-card"><div class="title">Uptime (min)</div><div class="stat stat-value">0</div></div>
+    <div class="card stat-card"><div class="title">Active Key</div><div class="stat stat-value">0</div></div>
+    <div class="card stat-card"><div class="title">Rotations</div><div class="stat stat-value">0</div></div>
+    <div class="card stat-card"><div class="title">Dead Keys</div><div class="stat stat-value">0</div></div>
+    <div class="card stat-card"><div class="title">Rate-Limited Keys</div><div class="stat stat-value">0</div></div>
+    <div class="card log-panel"></div>
+  </div>
+  <script>
+  const stats = {
+    uptime: document.querySelector('.stat-card:nth-child(1) .stat-value'),
+    activeKey: document.querySelector('.stat-card:nth-child(2) .stat-value'),
+    rotations: document.querySelector('.stat-card:nth-child(3) .stat-value'),
+    deadKeys: document.querySelector('.stat-card:nth-child(4) .stat-value'),
+    rateLimited: document.querySelector('.stat-card:nth-child(5) .stat-value'),
+    logPanel: document.querySelector('.log-panel')
+  };
+  const evtSource = new EventSource("/stream");
+  evtSource.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    stats.uptime.textContent = data.uptime;
+    stats.activeKey.textContent = data.activeKey;
+    stats.rotations.textContent = data.rotations;
+    stats.deadKeys.textContent = data.deadKeys;
+    stats.rateLimited.textContent = data.rateLimited;
+
+    stats.logPanel.innerHTML = data.logs.map(it => \`
+      <div class="log-row" style="background:\${it.status>=200&&it.status<400?'rgba(52,211,153,0.1)':it.status===429?'rgba(251,191,36,0.1)':'rgba(248,113,113,0.1)'};">
+        <span class="muted">\${new Date(it.ts).toLocaleTimeString()}</span>
+        <span class="pill \${it.status>=200&&it.status<400?'green':it.status===429?'yellow':'red'}">#\${it.keyIndex||'-'} • \${it.status}</span>
+        <span class="pill">\${it.latencyMs} ms</span>
+        <div class="mask"><b>[USER]</b> \${it.user||''}</div>
+        \${it.reply?`<div class="mask"><b>[BOT]</b> \${it.reply}</div>`:''}
+      </div>\`).join('');
+  };
+  </script>
+  </body></html>`);
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT,()=>console.log(`🚀 Dashboard running on http://localhost:${PORT}`));
