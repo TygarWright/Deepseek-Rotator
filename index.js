@@ -180,6 +180,10 @@ body{margin:0;font-family:-apple-system,system-ui;background:linear-gradient(145
 .log-entry{margin-bottom:6px;padding:6px;border-radius:12px;background:rgba(255,255,255,0.05);}
 </style>`;
 
+app.get("/", (req, res) => {
+  res.redirect("/login");
+});
+
 app.get("/login", (req, res) => {
   res.send(`<!DOCTYPE html><html><head>${styles}<title>Login</title></head><body><div class="container"><div class="card"><div class="title">Dashboard Login</div><form method="POST" action="/login"><input name="username" placeholder="Username"><input name="password" type="password" placeholder="Password"><button type="submit">Login</button></form></div></div></body></html>`);
 });
